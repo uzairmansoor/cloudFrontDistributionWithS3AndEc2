@@ -1,0 +1,74 @@
+AWSTemplateFormatVersion : "2010-09-09"
+Description: "CloudFormation Template for deploying an EC2 Instance"
+
+Parameters:
+  project:
+    Type: String
+    Description:  Project Name
+  app:
+    Type: String
+    Description:  Application Name   
+  env:
+    Type: String
+    AllowedValues: [prod, dev, qa, stag]
+    Description:  Environment Name
+  instanceType:
+    Type: String
+    Description: The instance type   
+  securityGroupId:
+    Type: String
+    Description: The IDs of the security groups
+  imageId:
+    Type: String
+    Description: The ID of the AMI 
+  subnetId:
+    Type: String
+    Description: The ID of the subnet to launch the instance into
+  availabilityZone:
+    Type: String
+    Description: The Availability Zone where the specified instance is launched
+  userData:
+    Type: String
+    Description: The user data script to make available to the instance
+  keyName:
+    Type: String
+    Description: The name of key pair
+  ec2ExportName:
+    Type: String
+    Description: The exported name of EC2 Instance
+    
+Resources:
+  ec2Instance:
+    Type: AWS::EC2::Instance
+    Properties: 
+      SecurityGroupIds:
+        - !Ref securityGroupId
+      AvailabilityZone: !Ref availabilityZone
+      InstanceType: !Ref instanceType    
+      SubnetId: !Ref subnetId
+      ImageId: !Ref imageId
+      KeyName: !Ref keyName    
+      Tags:
+        - Key: name
+          Value: !Sub ${project}-${app}-${env}-ec2
+        - Key: project
+          Value: !Ref project
+        - Key: app
+          Value: !Ref app
+        - Key: environment
+          Value: !Ref env  
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            yum -y update
+            sudo yum install -y git
+            sudo yum install -y httpd
+            sudo systemctl start httpd
+            sudo echo '<h1>${userData} ${AWS::Region}</h1>' > /var/www/html/index.html  
+
+Outputs:
+  ec2Instance:
+    Value: !Ref ec2Instance
+    Export:
+      Name: !Sub "${project}-${app}-${env}-${ec2ExportName}-${AWS::Region}"

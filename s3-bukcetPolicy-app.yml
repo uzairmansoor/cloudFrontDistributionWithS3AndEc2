@@ -1,0 +1,44 @@
+AWSTemplateFormatVersion : "2010-09-09"
+Description: "CloudFormation Template for deploying S3 Bucket"
+
+Parameters:
+  project:
+    Type: String
+    Description:  Project Name
+  app:
+    Type: String
+    Description:  Application Name   
+  env:
+    Type: String
+    AllowedValues: [prod, dev, qa, stag]
+    Description:  Environment Name
+  cloudFrontOriginAccessIdentity:
+    Type: String
+    Description: CloudFront Origin Access Identity (OAI)
+  s3BucketName:
+    Type: String
+    Description: Name of an S3 bucket
+
+Resources:
+  bucketPolicy:
+      Type: AWS::S3::BucketPolicy
+      Properties:
+        Bucket: !Ref s3BucketName
+        PolicyDocument:
+          Version: '2012-10-17'
+          Id: ObjectPolicy
+          Statement:      
+          - Sid: Allow access to get an object from Cloudfront
+            Effect: Allow
+            Principal:
+              AWS: !Sub 'arn:aws:iam::cloudfront:user/CloudFront Origin Access Identity ${cloudFrontOriginAccessIdentity}'
+            Action:
+              - s3:GetObject
+              - s3:PutObject
+            Resource: !Sub arn:aws:s3:::${s3BucketName}/*
+
+Outputs:
+  bucketPolicy:
+    Value: !Ref bucketPolicy
+    Export:
+      Name: !Sub "${project}-${app}-${env}-bucketPolicy-${AWS::Region}"

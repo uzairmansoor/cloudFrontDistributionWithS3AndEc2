@@ -1,0 +1,220 @@
+AWSTemplateFormatVersion : "2010-09-09"
+Description: Driver Template for deploying CloudFront
+
+Parameters:
+  project:
+    Type: String
+    Default: devops-poc
+    Description:  Project Name
+  app:
+    Type: String
+    Default: app
+    Description:  Application Name
+  env:
+    Type: String
+    Default: dev
+    AllowedValues: [prod, dev, qa, stag]
+    Description:  Environment Name
+  s3ArtifactPath:
+    Type: String
+    Default: "https://iacartifacts-devops-youtube-tutorials-us-east-1-355986150263.s3.amazonaws.com/code/cfn/services"
+    Description: Artifact Bucket Path
+
+Resources:
+  vpc:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/vpc-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        cidrBlock: 10.0.0.0/16
+        publicSubnetACidrBlock1: 10.0.0.0/21
+        publicSubnetBCidrBlock2: 10.0.8.0/21
+        privateSubnetACidrBlock1: 10.0.16.0/21
+        privateSubnetBCidrBlock2: 10.0.24.0/21
+        dnsSupport: True
+        dnsHostnames: True
+        publicIpOnLaunchforPublicSubnet: True
+        availabilityZone1: us-east-1a
+        availabilityZone2: us-east-1b
+  securityGroup:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - vpc
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/securityGroup-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        securityGroupName: EC2SecurityGroup
+        vpcId: !GetAtt vpc.Outputs.vpcId
+        cidrIPforSG: 0.0.0.0/0
+        fromPortHttp: 80
+        toPortHttp: 80
+        fromPortHttps: 443
+        toPortHttps: 443
+        fromPortSsh: 22
+        toPortSsh: 22
+  webServer1:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - vpc
+      - securityGroup
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/ec2-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        instanceType: t2.micro
+        securityGroupId: !GetAtt securityGroup.Outputs.securityGroupId
+        imageId: ami-0dbc3d7bc646e8516
+        subnetId: !GetAtt vpc.Outputs.publicSubnetA
+        availabilityZone: us-east-1a
+        userData: My Public Web Server 1
+        keyName: iacartifacts-devops-youtube-tutorials-us-east-1-355986150263
+        ec2ExportName: webServer1
+  webServer2:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - vpc
+      - securityGroup
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/ec2-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        instanceType: t2.micro
+        securityGroupId: !GetAtt securityGroup.Outputs.securityGroupId
+        imageId: ami-0dbc3d7bc646e8516
+        subnetId: !GetAtt vpc.Outputs.publicSubnetB
+        availabilityZone: us-east-1b
+        userData: My Public Web Server 2
+        keyName: iacartifacts-devops-youtube-tutorials-us-east-1-355986150263
+        ec2ExportName: webServer2
+  applicationLoadBalancer:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - vpc
+      - securityGroup
+      - webServer1
+      - webServer2
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/lb-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        securityGroupId: !GetAtt securityGroup.Outputs.securityGroupId
+        publicSubnetId: !GetAtt vpc.Outputs.publicSubnetA
+        publicSubnet2Id: !GetAtt vpc.Outputs.publicSubnetB
+        vpcId: !GetAtt vpc.Outputs.vpcId
+        loadBalancerName: ApplicationLoadBalancer
+        ec2TargetGroupName: EC2TargetGroup
+        webServer1: !GetAtt webServer1.Outputs.ec2Instance
+        webServer2: !GetAtt webServer2.Outputs.ec2Instance
+        targetGroupKeyAttr: load_balancing.algorithm.type
+        targetGroupValueAttr: round_robin
+        lbScheme: internet-facing
+        lbType: application
+        ipAddressType: ipv4
+        httpPort: 80
+        healthCheckProtocol: HTTP
+        healthCheckIntervalSeconds: 30
+        healthCheckTimeoutSeconds: 15
+        healthyThresholdCount: 5
+        unhealthyThresholdCount: 3
+        matcherCode: 200
+        lbTargetType: instance
+  cfS3Bucket:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/s3-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        bucketName: artifacts
+        versioningStatus: Enabled
+        indexDocument: index.html
+        errorDocument: error.html
+  cfS3BucketPolicy:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - cloudFront
+      - cfS3Bucket
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/s3-bukcetPolicy-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        cloudFrontOriginAccessIdentity: !GetAtt cloudFront.Outputs.cloudFrontOriginAccessIdentity
+        s3BucketName: !GetAtt cfS3Bucket.Outputs.s3BucketName
+
+  cloudFront:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - applicationLoadBalancer
+      - cfS3Bucket
+    Properties:
+      TemplateURL: !Sub "${s3ArtifactPath}/cloudFrontDistributionWithS3AndEc2/cloudfront-app.yml"
+      Parameters:
+        project: !Ref project
+        app: !Ref app
+        env: !Ref env
+        originProtocolPolicy: http-only
+        lbDnsName: !GetAtt applicationLoadBalancer.Outputs.lbDnsName
+        originKeepaliveTimeout: '60'
+        originReadTimeout: '30'
+        s3OriginId: S3 Origin
+        albOriginId: ALB Origin
+        s3bucketforcloufront: !GetAtt cfS3Bucket.Outputs.s3BucketName
+        applicationLoadBalancerName: ApplicationLoadBalancer
+        s3PathPattern: '/images/*'
+        errorCachingMinTTL: 0
+        errorCode: 403
+        responseCode: 200
+        errorResponsePagePath: /images/error.html
+        queryString: true
+        forwardCookies: all
+        viewerProtocolPolicy: allow-all
+        httpVersion: 'http2'
+
+Outputs:
+  vpc:
+    Value: !Ref vpc
+    Export:
+      Name: !Sub "${project}-${app}-${env}-vpcStack-${AWS::Region}"
+  securityGroup:
+    Value: !Ref securityGroup
+    Export:
+      Name: !Sub "${project}-${app}-${env}-securityGroupStack-${AWS::Region}"
+  webServer1:
+    Value: !Ref webServer1
+    Export:
+      Name: !Sub "${project}-${app}-${env}-webServer1Stack-${AWS::Region}"
+  webServer2:
+    Value: !Ref webServer2
+    Export:
+      Name: !Sub "${project}-${app}-${env}-webServer2Stack-${AWS::Region}"
+  applicationLoadBalancer:
+    Value: !Ref applicationLoadBalancer
+    Export:
+      Name: !Sub "${project}-${app}-${env}-applicationLoadBalancerStack-${AWS::Region}"
+  cfS3Bucket:
+    Value: !Ref cfS3Bucket
+    Export:
+      Name: !Sub "${project}-${app}-${env}-cfS3BucketStack-${AWS::Region}"
+  cfS3BucketPolicy:
+    Value: !Ref cfS3BucketPolicy
+    Export:
+      Name: !Sub "${project}-${app}-${env}-cfS3BucketPolicyStack-${AWS::Region}"
+  cloudFront:
+    Value: !Ref cloudFront
+    Export:
+      Name: !Sub "${project}-${app}-${env}-cloudFrontStack-${AWS::Region}"

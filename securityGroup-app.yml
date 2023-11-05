@@ -1,0 +1,80 @@
+AWSTemplateFormatVersion : "2010-09-09"
+Description: "CloudFormation for deploying Security Group"
+
+Parameters:
+  project:
+    Type: String
+    Description:  Project Name
+  app:
+    Type: String
+    Description:  Application Name
+  env:
+    Type: String
+    AllowedValues: [prod, dev, qa, stag]
+    Description:  Environment Name
+  securityGroupName: 
+    Type: String
+    Description: Security Group Name
+  vpcId:
+    Type: String
+    Description: Id of VPC
+  cidrIPforSG:
+    Type: String
+    Description: CIDR IP for Security Group
+  fromPortHttp:
+    Type: String
+    Description: From Port for HTTP
+  toPortHttp:
+    Type: String
+    Description: To Port for HTTP
+  fromPortHttps:
+    Type: String
+    Description: From Port for HTTPS
+  toPortHttps:
+    Type: String
+    Description: To Port for HTTPS
+  fromPortSsh:
+    Type: String
+    Description: From Port for SSH
+  toPortSsh:
+    Type: String
+    Description: To Port for SSH
+
+Resources:
+  securityGroupEC2:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId:  !Ref vpcId
+      GroupName: !Ref securityGroupName
+      GroupDescription: "Allow HTTP, HTTPS & SSH inbound traffic"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: !Ref fromPortHttp
+          ToPort: !Ref toPortHttp
+          CidrIp: !Ref cidrIPforSG
+        - IpProtocol: tcp
+          FromPort: !Ref fromPortHttps
+          ToPort: !Ref toPortHttps
+          CidrIp: !Ref cidrIPforSG
+        - IpProtocol: tcp
+          FromPort: !Ref fromPortSsh
+          ToPort: !Ref toPortSsh
+          CidrIp: !Ref cidrIPforSG
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: !Ref cidrIPforSG
+      Tags:
+        - Key: Name
+          Value: !Sub "${project}-${app}-${env}-privateNACL2"
+        - Key: project
+          Value: !Ref project
+        - Key: app
+          Value: !Ref app
+        - Key: environment
+          Value: !Ref env
+
+Outputs:
+  securityGroupId:
+    Value: !Ref securityGroupEC2
+    Export:
+      Name: !Sub "${project}-${app}-${env}-securityGroupId-${AWS::Region}"

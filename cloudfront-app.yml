@@ -1,0 +1,154 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation Template for deploying CloudFront'
+
+Parameters:
+  project:
+    Type: String
+    Description:  Project Name
+  app:
+    Type: String
+    Description:  Application Name   
+  env:
+    Type: String
+    Description:  Environment Name
+    AllowedValues: [prod, dev, qa, stag]
+  originProtocolPolicy:
+    Type: String
+    Description: Specifies the protocol (HTTP or HTTPS) that CloudFront uses to connect to the origin
+    AllowedValues: [http-only, match-viewer, https-only]
+  lbDnsName:
+    Type: String
+    Description: ALB DNS
+  originKeepaliveTimeout:
+    Type: String
+    Description: Specifies how long, in seconds, CloudFront persists its connection to the origin
+  originReadTimeout:
+    Type: String
+    Description: Specifies how long, in seconds, CloudFront waits for a response from the origin
+  s3OriginId:
+    Type: String
+    Description: The 'ID' value represents the identifier for the S3 origin directed by CloudFront 
+                  when utilizing the default cache behavior
+  albOriginId:
+    Type: String
+    Description: The value of ID for the ALB origin that you want CloudFront to route requests to 
+                 when they use the default cache behavior
+  s3bucketforcloufront:
+    Type: String
+    Description: The S3 bucket name  
+  applicationLoadBalancerName:
+    Type: String
+    Description: Application Load Balancer Name  
+  s3PathPattern:
+    Type: String
+    Description: The pattern that specifies which requests to apply the behavior to.
+  errorCachingMinTTL:
+    Type: String
+    Description: The minimum amount of time, in seconds, that you want CloudFront to 
+                 cache the HTTP status code specified in ErrorCode
+  errorCode:
+    Type: String
+    Description: The HTTP status code for which you want to specify a custom error 
+                 page and/or a caching duration 
+  responseCode:
+    Type: String
+    Description: The HTTP status code that you want CloudFront to return to the viewer 
+                 along with the custom error page  
+  errorResponsePagePath:
+    Type: String
+    Description: The path to the custom error page that you want CloudFront to return to 
+                 a viewer when your origin returns the HTTP status code specified by ErrorCode 
+  queryString:
+    Type: String
+    Description: This field is deprecated. We recommend that you use a cache policy or an 
+                 origin request policy instead of this field 
+  forwardCookies:
+    Type: String
+    Description: This field is deprecated. We recommend that you use a cache policy or an 
+                 origin request policy instead of this field 
+  viewerProtocolPolicy:
+    Type: String
+    Description: The protocol that viewers can use to access the files in the origin specified 
+                 by TargetOriginId when a request matches the path pattern in PathPattern  
+  httpVersion:
+    Type: String
+    Description: Specify the maximum HTTP version(s) that you want viewers to use to 
+                 communicate with CloudFront
+
+Resources:
+  cloudFrontDistribution:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Comment: 'Cloudfront Distribution pointing S3 and ALB Origin'
+        Origins:
+          - DomainName: !Sub "${s3bucketforcloufront}.s3.${AWS::Region}.amazonaws.com"  
+            Id: !Ref s3OriginId
+            S3OriginConfig:
+              OriginAccessIdentity:
+                !Join ['', ['origin-access-identity/cloudfront/', !Ref cloudFrontOriginAccessIdentity]] 
+          - DomainName: !Sub "${lbDnsName}"
+            Id: !Ref albOriginId
+            CustomOriginConfig:
+              HTTPPort: '80'
+              HTTPSPort: '443'
+              OriginProtocolPolicy: !Ref 'originProtocolPolicy'
+              OriginKeepaliveTimeout: !Ref 'originKeepaliveTimeout'
+              OriginReadTimeout: !Ref 'originReadTimeout'            
+        CustomErrorResponses:
+        -
+          ErrorCachingMinTTL: !Ref errorCachingMinTTL
+          ErrorCode: !Ref errorCode
+          ResponseCode: !Ref responseCode
+          ResponsePagePath: !Ref errorResponsePagePath              
+        DefaultCacheBehavior:
+          AllowedMethods:
+            - GET
+            - HEAD
+          TargetOriginId: !Ref albOriginId
+          ForwardedValues:
+            QueryString: !Ref queryString
+            Cookies:
+              Forward: !Ref forwardCookies
+          ViewerProtocolPolicy: !Ref viewerProtocolPolicy   
+        Enabled: true      
+        CacheBehaviors:
+        -
+          AllowedMethods:
+            - GET
+            - HEAD
+          CachedMethods:
+            - GET
+            - HEAD
+          TargetOriginId: !Ref s3OriginId
+          ForwardedValues:
+            QueryString: !Ref queryString
+            Cookies:
+              Forward: !Ref forwardCookies
+          ViewerProtocolPolicy: !Ref viewerProtocolPolicy
+          PathPattern: !Ref s3PathPattern
+        HttpVersion: !Ref httpVersion
+      Tags:
+        - Key: name
+          Value: !Sub "${project}-${app}-${env}-cloudFrontDistribution"
+        - Key: project
+          Value: !Ref project
+        - Key: app
+          Value: !Ref app
+        - Key: env
+          Value: !Ref env
+  cloudFrontOriginAccessIdentity:
+    Type: AWS::CloudFront::CloudFrontOriginAccessIdentity
+    Properties:
+      CloudFrontOriginAccessIdentityConfig:
+        Comment: CloudFront Origin AccessIdentity
+
+Outputs:
+  cloudFrontDistribution:
+    Value: !Ref cloudFrontDistribution
+    Export:
+      Name: !Sub "${project}-${app}-${env}-cloudFrontDistribution-${AWS::Region}"
+  cloudFrontOriginAccessIdentity: 
+    Value: !Ref cloudFrontOriginAccessIdentity
+    Export:
+      Name: !Sub "${project}-${app}-${env}-cloudFrontOriginAccessIdentity-${AWS::Region}"

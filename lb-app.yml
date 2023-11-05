@@ -1,0 +1,161 @@
+AWSTemplateFormatVersion : "2010-09-09"
+Description: "CloudFormation Template for deploying ELB"
+
+Parameters:
+  project:
+    Type: String
+    Description:  Project Name
+  app:
+    Type: String
+    Description:  Application Name 
+  env:
+    Type: String
+    AllowedValues: [prod, dev, qa, stag]
+    Description:  Environment Name
+  securityGroupId:
+    Type: String
+    Description: Security Group ID
+  publicSubnetId:
+    Type: String
+    Description: Public Subnet 1 ID
+  publicSubnet2Id:
+    Type: String
+    Description: Public Subnet 2 ID
+  vpcId:
+    Type: String
+    Description: VPC ID
+  loadBalancerName:
+    Type: String
+    Default: ApplicationLoadBalancer
+    Description: Application Load Balancer Name
+  ec2TargetGroupName:
+    Type: String
+    Description: EC2 Target Group Name
+    Default: EC2TargetGroup
+  webServer1:
+    Type: String
+    Description: Web Server 1
+  webServer2:
+    Type: String
+    Description: Web Server 2
+  targetGroupKeyAttr:
+    Type: String
+    Description: Target Group Key 
+  targetGroupValueAttr:
+    Type: String
+    Default: round_robin
+    Description: Target Group Value
+    AllowedValues: [round_robin, least_outstanding_requests]
+  lbScheme:
+    Type: String
+    Default: internet-facing
+    AllowedValues: [ internal, internet-facing]
+    Description: The scheme of load balancer
+  lbType:
+    Type: String
+    Description: The type of load balancer
+  ipAddressType:
+    Type: String
+    Description: The type of IP address used for this target group
+  httpPort:
+    Type: String
+    Description: HTTP Port
+  healthCheckProtocol:
+    Type: String
+    Description: HTTP Protocol
+  healthCheckIntervalSeconds:
+    Type: String
+    Description: The approximate amount of time, in seconds, between health checks of an individual target
+  healthCheckTimeoutSeconds:
+    Type: String
+    Description: The amount of time, in seconds, during which no response from a target means a failed health check
+  healthyThresholdCount:
+    Type: String
+    Description: The number of consecutive health check successes required before considering a target healthy
+  unhealthyThresholdCount:
+    Type: String
+    Description: The number of consecutive health check failures required before considering a target unhealthy
+  matcherCode:
+    Type: String
+    Description: The HTTP or gRPC codes to use when checking for a successful response from a target
+  lbTargetType:
+    Type: String
+    Description: The ALB Target Type
+
+Resources:
+  loadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Ref loadBalancerName
+      Scheme: !Ref lbScheme
+      Type: !Ref lbType
+      Subnets:
+        - !Ref publicSubnetId
+        - !Ref publicSubnet2Id
+      SecurityGroups:
+        - Ref: securityGroupId
+      IpAddressType: !Ref ipAddressType
+      Tags:
+        - Key: name
+          Value: !Sub ${project}-${app}-${env}-loadBalancer
+        - Key: project
+          Value: !Ref project
+        - Key: app
+          Value: !Ref app
+        - Key: environment
+          Value: !Ref env 
+  albListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref loadBalancer
+      Port: !Ref httpPort
+      Protocol: !Ref healthCheckProtocol
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ec2TargetGroup
+  ec2TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      VpcId: !Ref vpcId
+      HealthCheckIntervalSeconds: !Ref healthCheckIntervalSeconds
+      HealthCheckProtocol: !Ref healthCheckProtocol
+      HealthCheckTimeoutSeconds: !Ref healthCheckTimeoutSeconds
+      HealthyThresholdCount: !Ref healthyThresholdCount
+      Matcher:
+        HttpCode: !Ref matcherCode
+      Name: !Ref ec2TargetGroupName
+      Port: !Ref httpPort
+      Protocol: !Ref healthCheckProtocol
+      TargetType: !Ref lbTargetType
+      Targets:
+      - Id: 
+          Ref: webServer1
+        Port: !Ref httpPort
+      - Id: 
+          Ref: webServer2
+        Port: !Ref httpPort
+      TargetGroupAttributes:
+        - Key: !Ref targetGroupKeyAttr
+          Value: !Ref targetGroupValueAttr
+      UnhealthyThresholdCount: !Ref unhealthyThresholdCount
+      Tags:
+        - Key: name
+          Value: !Sub "${project}-${app}-${env}-ec2TargetGroup"
+        - Key: project
+          Value: !Ref project
+        - Key: app
+          Value: !Ref app
+        - Key: env
+          Value: !Ref env
+
+Outputs:
+  loadBalancer:
+    Value: !Ref loadBalancer
+    Export:
+      Name: !Sub "${project}-${app}-${env}-loadBalancer-${AWS::Region}"
+  lbDnsName:
+    Value: !GetAtt loadBalancer.DNSName
+    Export:
+      Name: !Sub "${project}-${app}-${env}-lbDnsName-${AWS::Region}"
+
+  
